@@ -8,19 +8,24 @@
     - Update branch data
     - View branch data
 
-Account Management:
-  Create new account
-  Update account data
-  Delete account
+- Account Management
+    - Create new account
+    - Update account data
+    - Delete account
 
-Account Activity:
-  Transaction
-  Withdraw
-  Saving
+- Account Activity
+    - Transaction
+    - Withdraw
+    - Saving
   
-Reporting:
-  Reporting total credit, total debit, total account, total user
-            total balance, and dormant report
+- Reporting
+    - Reporting 
+    -   total credit 
+    -   total debit 
+    -   total account 
+    -   total user
+    -   total balance 
+    -   dormant report
   
 
 
