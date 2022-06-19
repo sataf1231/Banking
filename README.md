@@ -19,13 +19,12 @@
     - Saving
   
 - Reporting
-    - Reporting 
-    -   total credit 
-    -   total debit 
-    -   total account 
-    -   total user
-    -   total balance 
-    -   dormant report
+    -   Total credit 
+    -   Total debit 
+    -   Total account 
+    -   Total user
+    -   Total balance 
+    -   Dormant report
   
 
 
