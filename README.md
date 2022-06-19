@@ -1,5 +1,5 @@
-User Management:
-  Register new User
+- User Management:
+    -Register new User
   Update user data
   View user data
   
@@ -25,5 +25,4 @@ Reporting:
 
 
 
-
-[Uploading db_banking.png…]()
+![banking_project](https://user-images.githubusercontent.com/49120668/174479842-b81bdc5d-fbf5-49f0-8ba0-c45b7f87170d.png)
