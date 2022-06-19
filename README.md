@@ -3,7 +3,7 @@
     - Update user data
     - View user data
   
-Branch Management
+-Branch Management
     - Create new branch
     - Update branch data
     - View branch data
