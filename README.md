@@ -1,5 +1,5 @@
 - User Management:
-    -Register new User
+    - Register new User
   Update user data
   View user data
   
