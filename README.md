@@ -1,12 +1,12 @@
 - User Management:
     - Register new User
-  Update user data
-  View user data
+    - Update user data
+    - View user data
   
-Branch Management:
-  Create new branch
-  Update branch data
-  View branch data
+Branch Management
+    - Create new branch
+    - Update branch data
+    - View branch data
 
 Account Management:
   Create new account
