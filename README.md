@@ -27,6 +27,6 @@
     -   Dormant report
   
 
+![db_banking](https://user-images.githubusercontent.com/49120668/174480139-02eed542-0afd-4622-8808-ad0d681f5724.png)
 
 
-![banking_project](https://user-images.githubusercontent.com/49120668/174479842-b81bdc5d-fbf5-49f0-8ba0-c45b7f87170d.png)
