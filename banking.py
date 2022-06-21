@@ -10,19 +10,18 @@ import uuid
 from datetime import datetime, timedelta,date
 from sqlalchemy import func, between
 
-
 app = Flask(__name__)
 db = SQLAlchemy(app)
 app.config['SECRET_KEY']='secret'
-app.config['SQLALCHEMY_DATABASE_URI']='postgresql://postgres:0257@localhost:5432/sql_banking'
+app.config['SQLALCHEMY_DATABASE_URI']='postgresql://postgres:0257@localhost:5432/db_banking'
 
 class User(db.Model):
 	id = db.Column(db.Integer, primary_key=True, index=True)
 	public_id = db.Column(db.String, nullable=False)
-	name_user = db.Column(db.String(20), nullable=False)
+	name_user = db.Column(db.String(50), nullable=False)
 	username = db.Column(db.String(20), nullable=False, unique=True)
 	password = db.Column(db.String(20), nullable=False)
-	phone = db.Column(db.Numeric(15,2), nullable=False)
+	phone = db.Column(db.Numeric(16), nullable=False)
 	address = db.Column(db.String, nullable=False)
 	email = db.Column(db.String(50), nullable=False, unique=True)
 	is_admin = db.Column(db.Boolean, nullable=False)
@@ -44,7 +43,7 @@ class Branch(db.Model):
 class Account(db.Model):
 	id = db.Column(db.Integer, primary_key=True, index=True)
 	public_id = db.Column(db.String, nullable=False)
-	no_account = db.Column(db.Numeric(15), nullable=False, unique=True)
+	no_account = db.Column(db.Integer, nullable=False, unique=True)
 	name_account = db.Column(db.String(50), nullable=False)
 	balance = db.Column(db.Integer, nullable=False)
 	status = db.Column(db.String(20), nullable=False)
@@ -129,49 +128,49 @@ def get_user_id(id):
 @app.route('/user/', methods=['POST'])
 def create_user():
 	data = request.get_json()
-	decode = request.headers.get('Authorization')
-	allow = auth(decode)[0]
-	user = User.query.filter_by(username=allow).first()
-	if not user:
-		return {
-				'message' : 'Check your login details.'
-			}, 401
-	if user.is_admin == True:
-		data = request.get_json()
-		if not 'name_user' in data:
-			return jsonify({
-				'error': 'Bad Request',
-				'message': 'Name not given'
-			}), 400
-		if len(data['email']) < 5:
-			return jsonify({
-				'error': 'Bad Request',
-				'message': 'Email must be contain minimum of 5 letters'
-			}), 400
-		u = User(
-				name_user=data['name_user'],
-				username=data['username'],
-				password=data['password'],
-				phone=data['phone'],
-				address=data['address'],
-				email=data['email'],
-				is_admin=data.get('is_admin', False),
-				public_id=str(uuid.uuid4())
-			)
-		db.session.add(u)
-		db.session.commit()
-		return {
-			'name user': u.name_user,
-			'username':u.username,
-			'password':u.password,
-			'phone':u.phone,
-			'address':u.address,
-			'email':u.email,
-		}, 201
-	elif user.is_admin is False:
-		return {
-			'message':'Youre unauthorize to do that.'
-		},401
+	# decode = request.headers.get('Authorization')
+	# allow = auth(decode)[0]
+	# user = User.query.filter_by(username=allow).first()
+	# if not user:
+	# 	return {
+	# 			'message' : 'Check your login details.'
+	# 		}, 401
+	# if user.is_admin == True:
+	# 	data = request.get_json()
+	# 	if not 'name_user' in data:
+	# 		return jsonify({
+	# 			'error': 'Bad Request',
+	# 			'message': 'Name not given'
+	# 		}), 400
+	# 	if len(data['email']) < 5:
+	# 		return jsonify({
+	# 			'error': 'Bad Request',
+	# 			'message': 'Email must be contain minimum of 5 letters'
+	# 		}), 400
+	u = User(
+			name_user=data['name_user'],
+			username=data['username'],
+			password=data['password'],
+			phone=data['phone'],
+			address=data['address'],
+			email=data['email'],
+			is_admin=data.get('is_admin', False),
+			public_id=str(uuid.uuid4())
+		)
+	db.session.add(u)
+	db.session.commit()
+	return {
+		'name user': u.name_user,
+		'username':u.username,
+		'password':u.password,
+		'phone':u.phone,
+		'address':u.address,
+		'email':u.email,
+	}, 201
+	# elif user.is_admin is False:
+	# 	return {
+	# 		'message':'Youre unauthorize to do that.'
+	# 	},401
 
 #Update Data
 @app.route('/user/', methods=['PUT'])
@@ -285,7 +284,6 @@ def update_branch(id):
 		return {
 			'message':'Youre unauthorize to do that.'
 		},401
-
 
 #--------------------Account-------------------------#
 #Get
@@ -437,7 +435,8 @@ def create_save():
 	data = request.get_json()
 	decode = request.headers.get('Authorization')
 	allow = auth(decode)[0]
-	user = User.query.filter_by(username=allow).first()
+	allow1 = auth(decode)[1]
+	user = User.query.filter_by(username=allow).filter_by(password=allow1).first_or_404()
 	if not user:
 		return {
 				'message' : 'Check your login details.'
@@ -452,7 +451,12 @@ def create_save():
 				'error': 'Bad Request',
 				'message': 'Minimum amount is 10000'
 			}), 400
-		acc = Account.query.filter_by(no_account=data['no_account']).first()
+		acc = Account.query.filter_by(no_account=data['no_account']).filter_by(user_id=user.id).first()
+		if not acc:
+			return jsonify({
+				'error': 'Bad Request',
+				'message': 'Not your account'
+			}), 400
 		t = Transaction( 
 				date_transaction=data['date_transaction'],
 				amount=data['amount'],
@@ -466,11 +470,6 @@ def create_save():
 		db.session.commit()
 		return {
 			"message":"Success"
-			# 'name account': t.name_account,
-			# 'balance': t.balance,
-			# 'status': t.status,
-			# 'user id': t.user_id,
-			# 'branch id': t.branch_id
 		}, 201
 		
 #Witdraw
@@ -490,9 +489,8 @@ def create_withdraw():
 			'message':'Youre unauthorize to do that.'
 		},401
 	if user.is_admin == False:
-		acc = Account.query.filter_by(no_account=data['no_account']).first()
-		acc_ = Account.query.filter_by(no_account=acc.no_account).filter_by(user_id=user.id).first()
-		if not acc_:
+		acc = Account.query.filter_by(no_account=data['no_account']).filter_by(user_id=user.id).first()
+		if not acc:
 			return jsonify({
 				'error': 'Bad Request',
 				'message': 'Not your account'
@@ -530,11 +528,6 @@ def create_withdraw():
 		db.session.commit()
 		return {
 			"message":"Success"
-			# 'name account': t.name_account,
-			# 'balance': t.balance,
-			# 'status': t.status,
-			# 'user id': t.user_id,
-			# 'branch id': t.branch_id
 		}, 201
 
 #Transfer
@@ -543,6 +536,7 @@ def create_transfer():
 	data = request.get_json()
 	decode = request.headers.get('Authorization')
 	allow = auth(decode)[0]
+	allow1 = auth(decode)[1]
 	user = User.query.filter_by(username=allow).filter_by(password=allow1).first_or_404()
 	if not user:
 		return {
@@ -558,15 +552,14 @@ def create_transfer():
 			'message': 'Minimum amount is 10000'
 		}), 400
 	if user.is_admin == False:
-		acc = Account.query.filter_by(no_account=data["no_account"][0]).first()
-		acc1 = Account.query.filter_by(no_account=acc.no_account).filter_by(user_id=user.id).first()
+		acc1 = Account.query.filter_by(no_account=data["no_account"][0]).filter_by(user_id=user.id).first()
 		if not acc1:
 			return jsonify({
 				'error': 'Bad Request',
 				'message': 'Not your account'
 			}), 400
 		acc2 = Account.query.filter_by(no_account=data["no_account"][1]).first()
-		if acc.balance <= 50000:
+		if acc1.balance <= 50000:
 			return jsonify({
 				'error': 'Bad Request',
 				'message': 'Not enough Balance'
@@ -579,13 +572,13 @@ def create_transfer():
 				to_account_id=acc2.id,
 				public_id=str(uuid.uuid4())
 			)
-		acc.balance -= t.amount
-		if acc.balance < 50000:
+		acc1.balance -= t.amount
+		if acc1.balance < 50000:
 			return jsonify({
 				'error': 'Bad Request',
 				'message': 'Not enough Balance'
 			}), 400	
-		acc1.balance += t.amount		
+		acc2.balance += t.amount		
 		db.session.add(t)
 		db.session.commit()
 		return {
@@ -610,17 +603,17 @@ def get_history(id):
 		if not acc:
 			return jsonify({
 				'error': 'Bad Request',
-				'message': 'Not your account'
+				'message': 'Not your account or wrong account'
 			}), 400
 		i = Transaction.query.filter_by(from_account_id=acc.id).order_by(Transaction.date_transaction.desc()).all()
 		for x in i:
-			lst.append({'Transaction Date': x.date_transaction, 'Amount':x.amount, 'Desc':x.desc,'From Account':x.from_account_id,
+			lst.append({'Transaction Date': x.date_transaction.strftime('%Y-%m-%d'), 'Amount':x.amount, 'Desc':x.desc,'From Account':x.from_account_id,
 					'To Account':x.to_account_id})
 		return jsonify(lst),201
 
-#DB Execute Branch Report 1
-@app.route('/report1/', methods=['POST'])
-def get_report1():
+#DB Execute branch report total amount transaction by date
+@app.route('/branch-report-transaction/', methods=['POST'])
+def branch_report_transaction():
 	decode = request.headers.get('Authorization')
 	allow = auth(decode)[0]
 	user = User.query.filter_by(username=allow).first()
@@ -630,21 +623,21 @@ def get_report1():
 			}, 401
 	if user.is_admin == True:
 		data = request.get_json()
-		branch = Branch.query.filter_by(name_branch=data['name_branch']).first()
-		# result = db.engine.execute('''SELECT SUM(amount), "%s" FROM transaction WHERE (date_transaction BETWEEN '%s' AND '%s')GROUP BY "%s" ORDER BY SUM DESC'''%("desc",data['date'], data['date1'], "desc".strip()))
-		result = db.engine.execute('''SELECT SUM(t.amount), t."%s" FROM transaction t INNER JOIN account a ON a.id = t.from_account_id INNER JOIN branch ON branch.id = a.branch_id WHERE (date_transaction BETWEEN '%s' AND '%s') AND a.branch_id = '%s' GROUP BY "%s" ORDER BY SUM DESC'''%("desc",data['date'], data['date1'],branch.id, "desc".strip()))
+		create_view = db.engine.execute('''DROP VIEW IF EXISTS report; CREATE VIEW report AS SELECT b.name_branch as namebranch, SUM(t.amount) as samount, t."%s" as evdesc FROM transaction t INNER JOIN account a ON a.id = t.from_account_id INNER JOIN branch b ON b.id = a.branch_id WHERE (date_transaction BETWEEN '%s' AND '%s') GROUP BY namebranch, evdesc ORDER BY namebranch'''%("desc",data['date'], data['date1'].strip()))
+		result = db.engine.execute('''SELECT namebranch, SUM(Case When evdesc = 'Save' THEN samount ELSE 0 END),SUM(Case When evdesc = 'Withdraw'THEN samount ELSE 0 END)+SUM(Case When evdesc = 'Transfer'THEN samount ELSE 0 END) FROM report GROUP BY namebranch ''')
 		x = []
 		for y in result:
-			x.append({'Total Amount':y[0], 'Event':y[1]})
+			x.append({'branch_name':y['namebranch'],'total_debit':y[1], 'total_credit':y[2]
+				})
 		return jsonify(x)
 	elif user.is_admin == False:
 		return {
 			'message':'Youre unauthorize to do that.'
 		},401
 
-#DB Execute Branch Report 2
-@app.route('/report2/', methods=['POST'])
-def get_report2():
+#DB Execute branch report total user,account,balance
+@app.route('/branch-report-total/', methods=['GET'])
+def branch_report_total():
 	decode = request.headers.get('Authorization')
 	allow = auth(decode)[0]
 	user = User.query.filter_by(username=allow).first()
@@ -653,12 +646,12 @@ def get_report2():
 					'message' : 'Check your login details.'
 				}, 401
 	if user.is_admin == True:
-		data = request.get_json()
-		branch = Branch.query.filter_by(name_branch=data['name_branch']).first()
-		result = db.engine.execute('''SELECT COUNT(u.id),COUNT(a.no_account),SUM(a.balance) FROM account a INNER JOIN branch b ON b.id = a.branch_id INNER JOIN "%s" u ON a.user_id=u.id WHERE a.branch_id = '%s' '''%("user", branch.id))
+		# data = request.get_json()
+		# branch = Branch.query.filter_by(name_branch=data['name_branch']).first()
+		result = db.engine.execute('''SELECT b.name_branch as namebranch, COUNT(u.id) as uid,COUNT(a.no_account) as countacc,SUM(a.balance) as sumbalance FROM account a INNER JOIN branch b ON b.id = a.branch_id INNER JOIN "%s" u ON a.user_id=u.id GROUP BY b.name_branch ORDER BY namebranch'''%("user"))
 		x = []
 		for y in result:
-			x.append({'Total User':y[0], 'Total Account':y[1],'Total Balance':y[2]})
+			x.append({'name_branch':y['namebranch'],'total_user':y['uid'], 'total_account':y['countacc'],'total_balance':y['sumbalance']})
 		return jsonify(x)
 	elif user.is_admin == False:
 		return {
@@ -666,7 +659,7 @@ def get_report2():
 		},401
 
 #Dormant Report
-@app.route('/report-dormant/')
+@app.route('/report-dormant/', methods=['GET'])
 def get_dormant_report():
 	decode = request.headers.get('Authorization')
 	allow = auth(decode)[0]
@@ -676,18 +669,18 @@ def get_dormant_report():
 				'message' : 'Check your login details.'
 			}, 401
 	if user.is_admin == True:
-		test = get_time()
-		lsta = []
-		lstb = []
-		lstc = []
-		lstd = []
+		test = get_time() #get class get_time yang berisi rumus pengurangan -90 hari
+		lsta = [] # untuk memasukkan semua account dari tabel account
+		lstb = [] # untuk memasukkan semua data from_account_id dari tabel transaction
+		lstc = [] # untuk memasukkan semua data yang tidak ada di dalam variabel lsta
+		lstd = [] # 
 		t = Transaction.query.filter(Transaction.date_transaction.between(test[0],test[1])).all()
-		acc_ = Account.query.all()
-		for y in acc_:
+		acc = Account.query.all()
+		for y in acc:
 			lsta.append(y.id)
 		for x in t:
-			acc = Account.query.filter_by(id=x.from_account_id).first()
-			lstb.append(acc.id)
+			acc_ = Account.query.filter_by(id=x.from_account_id).first()
+			lstb.append(acc_.id)
 		for j in range(len(lsta)):
 			if lsta[j] not in lstb:
 				lstc.append(lsta[j])
@@ -706,7 +699,7 @@ def get_dormant_report():
 			elif time4 < time3:
 				time5 = time3 - time4
 				time6 = time2
-			lstd.append({'Account Number': t.no_account, "Dormant Duration(Days)": (time6 * 30)+time5, "Account Name":t.name_account})
+			lstd.append({'account_number': t.no_account, "dormant_duration_by_days": (time6 * 30)+time5, "account_name":t.name_account})
 		return jsonify(lstd),201
 	elif user.is_admin == False:
 		return {
