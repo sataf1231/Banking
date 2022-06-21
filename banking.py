@@ -128,49 +128,49 @@ def get_user_id(id):
 @app.route('/user/', methods=['POST'])
 def create_user():
 	data = request.get_json()
-	# decode = request.headers.get('Authorization')
-	# allow = auth(decode)[0]
-	# user = User.query.filter_by(username=allow).first()
-	# if not user:
-	# 	return {
-	# 			'message' : 'Check your login details.'
-	# 		}, 401
-	# if user.is_admin == True:
-	# 	data = request.get_json()
-	# 	if not 'name_user' in data:
-	# 		return jsonify({
-	# 			'error': 'Bad Request',
-	# 			'message': 'Name not given'
-	# 		}), 400
-	# 	if len(data['email']) < 5:
-	# 		return jsonify({
-	# 			'error': 'Bad Request',
-	# 			'message': 'Email must be contain minimum of 5 letters'
-	# 		}), 400
-	u = User(
-			name_user=data['name_user'],
-			username=data['username'],
-			password=data['password'],
-			phone=data['phone'],
-			address=data['address'],
-			email=data['email'],
-			is_admin=data.get('is_admin', False),
-			public_id=str(uuid.uuid4())
-		)
-	db.session.add(u)
-	db.session.commit()
-	return {
-		'name user': u.name_user,
-		'username':u.username,
-		'password':u.password,
-		'phone':u.phone,
-		'address':u.address,
-		'email':u.email,
-	}, 201
-	# elif user.is_admin is False:
-	# 	return {
-	# 		'message':'Youre unauthorize to do that.'
-	# 	},401
+	decode = request.headers.get('Authorization')
+	allow = auth(decode)[0]
+	user = User.query.filter_by(username=allow).first()
+	if not user:
+		return {
+				'message' : 'Check your login details.'
+			}, 401
+	if user.is_admin == True:
+		data = request.get_json()
+		if not 'name_user' in data:
+			return jsonify({
+				'error': 'Bad Request',
+				'message': 'Name not given'
+			}), 400
+		if len(data['email']) < 5:
+			return jsonify({
+				'error': 'Bad Request',
+				'message': 'Email must be contain minimum of 5 letters'
+			}), 400
+		u = User(
+				name_user=data['name_user'],
+				username=data['username'],
+				password=data['password'],
+				phone=data['phone'],
+				address=data['address'],
+				email=data['email'],
+				is_admin=data.get('is_admin', False),
+				public_id=str(uuid.uuid4())
+			)
+		db.session.add(u)
+		db.session.commit()
+		return {
+			'name user': u.name_user,
+			'username':u.username,
+			'password':u.password,
+			'phone':u.phone,
+			'address':u.address,
+			'email':u.email,
+		}, 201
+	elif user.is_admin is False:
+		return {
+			'message':'Youre unauthorize to do that.'
+		},401
 
 #Update Data
 @app.route('/user/', methods=['PUT'])
@@ -673,7 +673,7 @@ def get_dormant_report():
 		lsta = [] # untuk memasukkan semua account dari tabel account
 		lstb = [] # untuk memasukkan semua data from_account_id dari tabel transaction
 		lstc = [] # untuk memasukkan semua data yang tidak ada di dalam variabel lsta
-		lstd = [] # 
+		lstd = [] # untuk memasukkan data return
 		t = Transaction.query.filter(Transaction.date_transaction.between(test[0],test[1])).all()
 		acc = Account.query.all()
 		for y in acc:
@@ -687,7 +687,7 @@ def get_dormant_report():
 		for q in lstc:
 			t = Account.query.filter_by(id=q).first()
 			trans = Transaction.query.filter_by(from_account_id=q).order_by(Transaction.id.desc()).first()
-			time = datetime.today().strftime('%m')
+			time = datetime.today().strftime('%m') # mengambil data hari ini berdasarkan bulan
 			time2 = int(time)-int(trans.date_transaction.strftime('%m'))
 			time3 = int(datetime.today().strftime('%d'))
 			time4 = int(trans.date_transaction.strftime('%d'))
