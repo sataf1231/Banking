@@ -28,6 +28,7 @@
     -   Dormant report
   
 # Database ERD
-![db_banking](https://user-images.githubusercontent.com/49120668/174480139-02eed542-0afd-4622-8808-ad0d681f5724.png)
+![Screenshot_1](https://user-images.githubusercontent.com/49120668/175273650-9afb0aaf-a9d3-41ba-a16f-e8e25518f1c4.png)
+
 
 
