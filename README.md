@@ -11,8 +11,7 @@
 
 - Account Management
     - Create new account
-    - Update account data
-    - Delete account
+    - Update account status
 
 - Account Activity
     - Transaction
