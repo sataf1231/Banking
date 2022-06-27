@@ -57,14 +57,14 @@ class Transaction(db.Model):
 	date_transaction = db.Column(db.Date)
 	amount = db.Column(db.Integer, nullable=False)
 	desc = db.Column(db.String, nullable=False)
-	from_account_id = db.Column(db.Integer, nullable=False)
-	to_account_id = db.Column(db.Integer)
+	from_account_id = db.Column(db.Integer, db.ForeignKey('account.id'),nullable=False)
+	to_account_id = db.Column(db.Integer,db.ForeignKey('account.id'))
 
 	def __repr__(self):
 		return f'Transaction: <{self.amount}>'
 
-db.create_all()
-db.session.commit()
+# db.create_all()
+# db.session.commit()
 
 #---------------Auth-------------------
 # @app.route('/auth')
@@ -524,7 +524,7 @@ def create_transfer():
 			}, 401
 	if user.is_admin == True:
 		return {
-			'message':'Youre unauthorized to do that.'
+			'message':'Youre unauthorize to do that.'
 		},401
 	if (data['amount']) < 10000:
 		return jsonify({
@@ -532,7 +532,7 @@ def create_transfer():
 			'message': 'Minimum amount is 10000'
 		}), 400
 	if user.is_admin == False:
-		acc1 = Account.query.filter_by(id=data["id"][0]).filter_by(user_id=user.id).first()
+		acc1 = Account.query.filter_by(id=data["from_account_id"]).filter_by(user_id=user.id).first()
 		if not acc1:
 			return jsonify({
 				'error': 'Bad Request',
@@ -543,7 +543,7 @@ def create_transfer():
 				'error': 'Bad Request',
 				'message': 'Your account is inactive'
 			}), 400	
-		acc2 = Account.query.filter_by(id=data["id"][1]).first()
+		acc2 = Account.query.filter_by(id=data["to_account_id"]).first()
 		if acc2.status == 'Inactive':
 			return jsonify({
 				'error': 'Bad Request',
