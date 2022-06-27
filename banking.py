@@ -524,7 +524,7 @@ def create_transfer():
 			}, 401
 	if user.is_admin == True:
 		return {
-			'message':'Youre unauthorize to do that.'
+			'message':'Youre unauthorized to do that.'
 		},401
 	if (data['amount']) < 10000:
 		return jsonify({
