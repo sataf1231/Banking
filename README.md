@@ -26,9 +26,6 @@
     -   Total balance 
     -   Dormant report
   
-  - Frontend
-    -   User 
-    -   Admin
 
   
 # Database ERD
