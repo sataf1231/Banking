@@ -1,19 +1,23 @@
+from audioop import add
+import base64,uuid,json,requests,jwt, datetime
+from lib2to3.pgen2 import token
+from functools import wraps
 from enum import unique
-import json
 from re import U
 from tokenize import String
-import requests
-from flask import Flask, Request, Response, jsonify, request
-import base64
+from flask import Flask, Request, Response, jsonify, request,make_response
+from flask_cors import CORS,cross_origin
 from flask_sqlalchemy import SQLAlchemy
-import uuid
-from datetime import datetime, timedelta,date
+from datetime import timedelta,date,datetime
 from sqlalchemy import func, between
 
 app = Flask(__name__)
 db = SQLAlchemy(app)
-app.config['SECRET_KEY']='secret'
+CORS(app,supports_credentials=True)
+
 app.config['SQLALCHEMY_DATABASE_URI']='postgresql://postgres:0257@localhost:5432/db_banking'
+app.config['SECRET_KEY']='internet banking'
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = True
 
 class User(db.Model):
 	id = db.Column(db.Integer, primary_key=True, index=True)
@@ -47,6 +51,7 @@ class Account(db.Model):
 	status = db.Column(db.String(20), nullable=False)
 	user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
 	branch_id = db.Column(db.Integer, db.ForeignKey('branch.id'), nullable=False)
+	# accounttrans = db.relationship('Transaction', backref='accounttrans')
 
 	def __repr__(self):
 		return f'Account: <{self.name_account}>'
@@ -58,7 +63,7 @@ class Transaction(db.Model):
 	amount = db.Column(db.Integer, nullable=False)
 	desc = db.Column(db.String, nullable=False)
 	from_account_id = db.Column(db.Integer, db.ForeignKey('account.id'),nullable=False)
-	to_account_id = db.Column(db.Integer,db.ForeignKey('account.id'))
+	to_account_id = db.Column(db.Integer, db.ForeignKey('account.id'))
 
 	def __repr__(self):
 		return f'Transaction: <{self.amount}>'
@@ -66,8 +71,27 @@ class Transaction(db.Model):
 # db.create_all()
 # db.session.commit()
 
+#--------------Token------------------
+def token_required(f):
+	@wraps(f)
+	def decorated(*args, **kwargs):
+		token = None
+		if 'x-access-token' in request.headers:
+				token = request.headers['x-access-token']
+		if not token:
+				return jsonify({'message' : 'Token is missing !!'}), 401
+		try:
+				data = jwt.decode(token, app.config['SECRET_KEY'], algorithms="HS256")
+				current_user = User.query.filter_by(username=data['username']).first()
+		except:
+				return jsonify({
+						'message' : 'Token is invalid !!'
+				}), 401
+		return  f(current_user,*args, **kwargs)
+	return decorated
+
 #---------------Auth-------------------
-# @app.route('/auth')
+@app.route('/auth')
 def auth(a):
 	c = base64.b64decode(a[6:])
 	e = c.decode("ascii")
@@ -80,28 +104,46 @@ def auth(a):
 	elif user:
 		return [username, passw]
 
+#--------------------Login-------------------
+@app.route('/login/', methods=['POST']) 
+@cross_origin(supports_credentials= True)
+def login_user():
+	decode_var = request.headers.get('Authorization')
+	allow = auth(decode_var)[0]
+	allowpass = auth(decode_var)[1] 
+	user = User.query.filter_by(username=allow).filter_by(password=allowpass).first()  
+	if not user:
+		return make_response('Please check your login detail',401)
+
+	elif user:
+		token = jwt.encode({'public_id' : user.public_id,'is_admin' : user.is_admin, 'name_user':user.name_user,'username': user.username,'exp' : datetime.now() + timedelta(hours=1)}, app.config['SECRET_KEY'])
+		return make_response(jsonify({'token':token}),201)
+
+	else:
+		return make_response('could not verify',  401, {'Authentication': '"login required"'})
+
 #---------------------User----------------------#
 #Get
 @app.route('/user/')
 def get_user():
 	decode = request.headers.get('Authorization')
-	allow = auth(decode)[0]
-	user = User.query.filter_by(username=allow).first()
-	if not user:
-		return {
-				'message' : 'Check your login details.'
-			}, 401
-	elif user.is_admin == True:
-		return jsonify([
-				{
-					'id': i.public_id, 'name_user': i.name_user, 'username':i.username, 'password':i.password,'phone':i.phone,
-					'address':i.address,'email':i.email
-					} for i in User.query.all()
-			]),200
-	elif user.is_admin is False:
-		return {
-			'message':'Youre unauthorize to do that.'
-		},401
+	# allow = auth(decode)[0]
+	# user = User.query.filter_by(username=allow).first()
+	# if not user:
+	# 	return {
+	# 			'message' : 'Check your login details.'
+	# 		}, 401
+	# elif user.is_admin == True:
+	return jsonify([
+			{
+				'id': i.public_id, 'name_user': i.name_user, 'username':i.username, 'password':i.password,'phone':i.phone,
+				'address':i.address,'email':i.email
+				} for i in User.query.all()
+		]),200
+	# elif user.is_admin is False:
+	# 	return {
+	# 		'message':'Youre unauthorize to do that.'
+	# 	},401
 
 #Get ID
 @app.route('/user/<id>/')
@@ -124,16 +166,17 @@ def get_user_id(id):
 
 #Insert
 @app.route('/user/', methods=['POST'])
-def create_user():
+@token_required
+def create_user(current_user):
 	data = request.get_json()
-	decode = request.headers.get('Authorization')
-	allow = auth(decode)[0]
-	user = User.query.filter_by(username=allow).first()
-	if not user:
+	# decode = request.headers.get('Authorization')
+	# allow = auth(decode)[0]
+	# user = User.query.filter_by(username=allow).first()
+	if not current_user:
 		return {
 				'message' : 'Check your login details.'
 			}, 401
-	if user.is_admin == True:
+	if current_user.is_admin == True:
 		data = request.get_json()
 		if not 'name_user' in data:
 			return jsonify({
@@ -165,69 +208,101 @@ def create_user():
 			'address':u.address,
 			'email':u.email,
 	}, 201
-	elif user.is_admin is False:
+	elif current_user.is_admin is False:
 		return {
 			'message':'Youre unauthorize to do that.'
 		},401
 
-#Update Data
-@app.route('/user/', methods=['PUT'])
-def update_user():
+#Update Data Password
+@app.route('/user_password/', methods=['PUT'])
+@token_required
+def update_user_password(current_user):
 	data = request.get_json()
-	decode = request.headers.get('Authorization')
-	allow = auth(decode)[0]
-	allow1 = auth(decode)[1]
-	user = User.query.filter_by(username=allow).filter_by(password=allow1).first()
-	if not user:
+	# decode = request.headers.get('Authorization')
+	# allow = auth(decode)[0]
+	# allow1 = auth(decode)[1]
+	# user = User.query.filter_by(username=allow).filter_by(password=allow1).first()
+	if not current_user:
 		return {
 				'message' : 'Check your login details.'
 			}, 401
-	elif user:
+	elif current_user:
 		if 'password' not in data:
 			return {
 				'error': 'Bad Request',
 				'message': 'Name field needs to be present'
 			}, 400
-		user.password=data['password']
+		current_user.password=data['password']
 		db.session.commit()
 		return jsonify({
 			'message': "Update success"
 			}),200
+
+#Update Data
+@app.route('/user_update/<id>/', methods=['PUT'])
+@token_required
+def update_user_data(current_user,id):
+	data = request.get_json()
+	# decode = request.headers.get('Authorization')
+	# allow = auth(decode)[0]
+	# allow1 = auth(decode)[1]
+	# user = User.query.filter_by(username=allow).filter_by(password=allow1).first()
+	user = User.query.filter_by(public_id=id).first_or_404()
+	if current_user.is_admin == False:
+		return {
+				'message' : 'Check your login details.'
+			}, 401
+	elif current_user.is_admin == True:
+		if 'name_user' not in data:
+			return {
+				'error': 'Bad Request',
+				'message': 'Name field needs to be present'
+			}, 400
+		user.name_user=data['name_user']
+		user.phone=data['phone']
+		user.address=data['address']
+		user.email=data['email']
+		db.session.commit()
+		return jsonify({
+			'message': "Update success"
+			}),200
+
 
 #---------------------Branch-----------------#
 #Get
 @app.route('/branch/')
 def get_branch():
 	decode = request.headers.get('Authorization')
-	allow = auth(decode)[0]
-	user = User.query.filter_by(username=allow).first()
-	if not user:
-		return {
-				'message' : 'Check your login details.'
-			}, 401
-	if user.is_admin == True:
-		return jsonify([
-				{
-					'id': i.public_id, 'name_branch': i.name_branch, 'city':i.city
-					} for i in Branch.query.all()
-			]),201
-	elif user.is_admin == False:
-		return {
-			'message':'Youre unauthorize to do that.'
-		},401
+	# allow = auth(decode)[0]
+	# user = User.query.filter_by(username=allow).first()
+	# if not user:
+	# 	return {
+	# 			'message' : 'Check your login details.'
+	# 		}, 401
+	# if user.is_admin == True:
+	return jsonify([
+			{
+				'id': i.public_id, 'name_branch': i.name_branch, 'city':i.city
+				} for i in Branch.query.all()
+		]),201
+	# elif user.is_admin == False:
+	# 	return {
+	# 		'message':'Youre unauthorize to do that.'
+	# 	},401
 
 #Insert
-@app.route('/branch/', methods=['POST'])
-def create_branch():
+@app.route('/create_branch/', methods=['POST'])
+@token_required
+def create_branch(current_user):
 	data = request.get_json()
-	decode = request.headers.get('Authorization')
-	allow = auth(decode)[0]
-	user = User.query.filter_by(username=allow).first()
-	if not user:
+	# decode = request.headers.get('Authorization')
+	# allow = auth(decode)[0]
+	# user = User.query.filter_by(username=allow).first()
+	if not current_user:
 		return {
 				'message' : 'Check your login details.'
 			}, 401
-	if user.is_admin == True:
+	if current_user.is_admin == True:
 		if not 'name_branch' in data:
 			return jsonify({
 				'error': 'Bad Request',
@@ -244,23 +319,24 @@ def create_branch():
 			'name_branch': b.name_branch,
 			'city': b.city
 		}, 201
-	elif user.is_admin is False:
+	elif current_user.is_admin is False:
 		return {
 			'message':'Youre unauthorize to do that.'
 		},401
 
 #Update Data
 @app.route('/branch/<id>/', methods=['PUT'])
-def update_branch(id):
+@token_required
+def update_branch(current_user,id):
 	data = request.get_json()
-	decode = request.headers.get('Authorization')
-	allow = auth(decode)[0]
-	user = User.query.filter_by(username=allow).first()
-	if not user:
+	# decode = request.headers.get('Authorization')
+	# allow = auth(decode)[0]
+	# user = User.query.filter_by(username=allow).first()
+	if not current_user:
 		return {
 				'message' : 'Check your login details.'
 			}, 401
-	elif user.is_admin == True:
+	elif current_user.is_admin == True:
 		if 'name_branch' not in data:
 			return {
 				'error': 'Bad Request',
@@ -273,7 +349,7 @@ def update_branch(id):
 		return jsonify({
 			'name_branch': branch.name_branch, 'city':branch.city,
 			}),200
-	elif user.is_admin is False:
+	elif current_user.is_admin is False:
 		return {
 			'message':'Youre unauthorize to do that.'
 		},401
@@ -283,41 +359,42 @@ def update_branch(id):
 @app.route('/account/')
 def get_account():
 	decode = request.headers.get('Authorization')
-	allow = auth(decode)[0]
-	user = User.query.filter_by(username=allow).first()
-	if not user:
-		return {
-				'message' : 'Check your login details.'
-			}, 401
-	if user.is_admin == True:
-		return jsonify([
-				{
-					'id': i.id, 
-					'name_account': i.name_account, 
-					'balance':i.balance,
-					'status':i.status,
-					'user_name':i.usera.name_user,
-					'branch_name':i.brancha.name_branch,
-					} for i in Account.query.all()
-			])
-	elif user.is_admin == False:
-		return {
-			'message':'Youre unauthorize to do that.'
-		},401
+	# allow = auth(decode)[0]
+	# user = User.query.filter_by(username=allow).first()
+	# if not user:
+	# 	return {
+	# 			'message' : 'Check your login details.'
+	# 		}, 401
+	# if user.is_admin == True:
+	return jsonify([
+			{
+				'id': i.id, 
+				'name_account': i.name_account, 
+				'balance':i.balance,
+				'status':i.status,
+				'user_name':i.usera.name_user,
+				'branch_name':i.brancha.name_branch,
+				} for i in Account.query.all()
+		])
+	# elif user.is_admin == False:
+	# 	return {
+	# 		'message':'Youre unauthorize to do that.'
+	# 	},401
 
 #Get ID
-@app.route('/account-id/')
-def get_account_id():
-	decode = request.headers.get('Authorization')
-	allow = auth(decode)[0]
-	allow1 = auth(decode)[1]
-	user = User.query.filter_by(username=allow).filter_by(password=allow1).first()
-	if not user:
+@app.route('/account_id/')
+@token_required
+def get_account_id(current_user):
+	# decode = request.headers.get('Authorization')
+	# allow = auth(decode)[0]
+	# allow1 = auth(decode)[1]
+	# user = User.query.filter_by(public_id=public_id).first()
+	if not current_user:
 		return {
 				'message' : 'Check your login details.'
 			}, 401
-	elif user:
-		acc = Account.query.filter_by(user_id=user.id).all()
+	elif current_user:
+		acc = Account.query.filter_by(user_id=current_user.id).order_by(Account.id.desc()).all()
 		lis = []
 		for x in acc:
 			lis.append(
@@ -334,16 +411,17 @@ def get_account_id():
 
 #Insert
 @app.route('/account/', methods=['POST'])
-def create_account():
+@token_required
+def create_account(current_user):
 	data = request.get_json()
-	decode = request.headers.get('Authorization')
-	allow = auth(decode)[0]
-	user = User.query.filter_by(username=allow).first()
-	if not user:
+	# decode = request.headers.get('Authorization')
+	# allow = auth(decode)[0]
+	# user = User.query.filter_by(username=allow).first()
+	if not current_user:
 		return {
 				'message' : 'Check your login details.'
 			}, 401
-	if user.is_admin == True:
+	if current_user.is_admin == True:
 		user = User.query.filter_by(username=data['username']).first()
 		if not user:
 			return jsonify({
@@ -368,23 +446,24 @@ def create_account():
 		return {
 			'id': a.id,'name_account': a.name_account,'balance': a.balance,'status': a.status,'user_id': a.user_id,'branch_id': a.branch_id
 		}, 201
-	elif user.is_admin is False:
+	elif current_user.is_admin is False:
 		return {
 			'message':'Youre unauthorize to do that.'
 		},401
 
 #Update Data
 @app.route('/account/<id>/', methods=['PUT'])
-def update_account(id):
-	decode = request.headers.get('Authorization')
-	allow = auth(decode)[0]
-	user = User.query.filter_by(username=allow).first()
+@token_required
+def update_account(current_user,id):
+	# decode = request.headers.get('Authorization')
+	# allow = auth(decode)[0]
+	# user = User.query.filter_by(username=allow).first()
 	acc = Account.query.filter_by(id=id).first_or_404()
-	if not user:
+	if not current_user:
 		return {
 				'message' : 'Check your login details.'
 			}, 401
-	elif user.is_admin == True:
+	elif current_user.is_admin == True:
 		if acc.status == 'Active':
 			acc.status = 'Inactive'
 			db.session.commit()
@@ -394,7 +473,7 @@ def update_account(id):
 		return jsonify({
 			'id': acc.id, 'name_account':acc.name_account, 'status':acc.status
 			}),200
-	elif user.is_admin is False:
+	elif current_user.is_admin is False:
 		return {
 			'message':'Youre unauthorize to do that.'
 		},401
@@ -402,37 +481,38 @@ def update_account(id):
 #-------------Transaction------------------#
 #Save
 @app.route('/save/', methods=['POST'])
-def create_save():
+@token_required
+def create_save(current_user):
 	data = request.get_json()
 	decode = request.headers.get('Authorization')
-	allow = auth(decode)[0]
-	allow1 = auth(decode)[1]
-	user = User.query.filter_by(username=allow).filter_by(password=allow1).first()
-	if not user:
+	# allow = auth(decode)[0]
+	# allow1 = auth(decode)[1]
+	# user = User.query.filter_by(username=allow).filter_by(password=allow1).first()
+	if not current_user:
 		return {
 				'message' : 'Check your login details.'
 			}, 401
-	if user.is_admin == True:
+	if current_user.is_admin == True:
 		return {
 			'message':'Youre unauthorize to do that.'
 		},401
-	if user.is_admin == False:
+	if current_user.is_admin == False:
 		if (data['amount']) < 10000:
-			return jsonify({
+			return make_response(jsonify({
 				'error': 'Bad Request',
 				'message': 'Minimum amount is 10000'
-			}), 400
-		acc = Account.query.filter_by(id=data['id']).filter_by(user_id=user.id).first()
+			}), 400)
+		acc = Account.query.filter_by(id=data['id']).filter_by(user_id=current_user.id).first()
 		if not acc:
-			return jsonify({
+			return make_response(jsonify({
 				'error': 'Bad Request',
 				'message': 'Not your account'
-			}), 400	
+			}), 400	)
 		if acc.status == 'Inactive':
-			return jsonify({
+			return make_response(jsonify({
 				'error': 'Bad Request',
 				'message': 'Your account is inactive'
-			}), 400	
+			}), 400	)
 		t = Transaction( 
 				date_transaction=datetime.today().strftime('%Y-%m-%d'),
 				amount=data['amount'],
@@ -450,22 +530,23 @@ def create_save():
 		
 #Witdraw
 @app.route('/withdraw/', methods=['POST'])
-def create_withdraw():
+@token_required
+def create_withdraw(current_user):
 	data = request.get_json()
 	decode = request.headers.get('Authorization')
-	allow = auth(decode)[0]
-	allow1 = auth(decode)[1]
-	user = User.query.filter_by(username=allow).filter_by(password=allow1).first()
-	if not user:
+	# allow = auth(decode)[0]
+	# allow1 = auth(decode)[1]
+	# user = User.query.filter_by(username=allow).filter_by(password=allow1).first()
+	if not current_user:
 		return {
 				'message' : 'Check your login details.'
 			}, 401
-	if user.is_admin == True:
+	if current_user.is_admin == True:
 		return {
 			'message':'Youre unauthorize to do that.'
 		},401
-	if user.is_admin == False:
-		acc = Account.query.filter_by(id=data['id']).filter_by(user_id=user.id).first()
+	if current_user.is_admin == False:
+		acc = Account.query.filter_by(id=data['id']).filter_by(user_id=current_user.id).first()
 		if not acc:
 			return jsonify({
 				'message': 'Not your account'
@@ -512,17 +593,18 @@ def create_withdraw():
 
 #Transfer
 @app.route('/transfer/', methods=['POST'])
-def create_transfer():
+@token_required
+def create_transfer(current_user):
 	data = request.get_json()
 	decode = request.headers.get('Authorization')
-	allow = auth(decode)[0]
-	allow1 = auth(decode)[1]
-	user = User.query.filter_by(username=allow).filter_by(password=allow1).first()
-	if not user:
+	# allow = auth(decode)[0]
+	# allow1 = auth(decode)[1]
+	# user = User.query.filter_by(username=allow).filter_by(password=allow1).first()
+	if not current_user:
 		return {
 				'message' : 'Check your login details.'
 			}, 401
-	if user.is_admin == True:
+	if current_user.is_admin == True:
 		return {
 			'message':'Youre unauthorize to do that.'
 		},401
@@ -531,8 +613,8 @@ def create_transfer():
 			'error': 'Bad Request',
 			'message': 'Minimum amount is 10000'
 		}), 400
-	if user.is_admin == False:
-		acc1 = Account.query.filter_by(id=data["from_account_id"]).filter_by(user_id=user.id).first()
+	if current_user.is_admin == False:
+		acc1 = Account.query.filter_by(id=data["from_account_id"]).filter_by(user_id=current_user.id).first()
 		if not acc1:
 			return jsonify({
 				'error': 'Bad Request',
@@ -581,43 +663,52 @@ def create_transfer():
 		}, 201
 
 #History
-@app.route('/history/<id>/') #Find berdasarkan nomor account
-def get_history(id):
-	decode = request.headers.get('Authorization')
-	allow = auth(decode)[0]
-	allow1 = auth(decode)[1]
-	user = User.query.filter_by(username=allow).filter_by(password=allow1).first()
-	if not user:
+@app.route('/history/') #Find berdasarkan nomor account
+@token_required
+def get_history(current_user):
+	# decode = request.headers.get('Authorization')
+	# allow = auth(decode)[0]
+	# allow1 = auth(decode)[1]
+	# user = User.query.filter_by(username=allow).filter_by(password=allow1).first()
+	if not current_user:
 		return {
 				'message' : 'Check your login details.'
 			}, 401
-	elif user:
+
+	elif current_user:
 		lst = []
-		acc = Account.query.filter_by(id=id).filter_by(user_id=user.id).first()
+		lst2 = []
+		acc = Account.query.filter_by(user_id=current_user.id).all()
+		for i in acc:
+			lst.append(i.id)
 		if not acc:
 			return jsonify({
 				'error': 'Bad Request',
 				'message': 'Not your account or wrong account'
 			}), 400
-		i = Transaction.query.filter_by(from_account_id=acc.id).order_by(Transaction.date_transaction.desc()).all()
-		for x in i:
-			first_acc = Account.query.filter_by(id=x.from_account_id).first()
-			last_acc = Account.query.filter_by(id=x.to_account_id).first()
-			lst.append({'transaction_date': x.date_transaction.strftime('%Y-%m-%d'), 'amount':x.amount, 'event':x.desc,'from_account':first_acc.name_account,
-					'to_account':last_acc.name_account})
-		return jsonify(lst),201
+		# i = Transaction.query.filter_by(from_account_id=acc.id).order_by(Transaction.date_transaction.desc()).all()
+		for j in lst:
+			acc2 = Transaction.query.filter_by(from_account_id=j).order_by(Transaction.date_transaction.desc()).all()
+			for x in acc2:
+				first_acc = Account.query.filter_by(id=x.from_account_id).first()
+				last_acc = Account.query.filter_by(id=x.to_account_id).first()
+				lst2.append({'transaction_date': x.date_transaction.strftime('%Y-%m-%d'), 'amount':x.amount, 'desc':x.desc,'from_account_id':first_acc.name_account,
+						'to_account_id':last_acc.name_account})
+		return jsonify(lst2),201
+		
 
 #DB Execute branch report total amount transaction by date
 @app.route('/branch-report-transaction/', methods=['POST'])
-def branch_report_transaction():
-	decode = request.headers.get('Authorization')
-	allow = auth(decode)[0]
-	user = User.query.filter_by(username=allow).first()
-	if not user:
+@token_required
+def branch_report_transaction(current_user):
+	# decode = request.headers.get('Authorization')
+	# allow = auth(decode)[0]
+	# user = User.query.filter_by(username=allow).first()
+	if not current_user:
 		return {
 				'message' : 'Check your login details.'
 			}, 401
-	if user.is_admin == True:
+	if current_user.is_admin == True:
 		data = request.get_json()
 		create_view = db.engine.execute('''DROP VIEW IF EXISTS report; CREATE VIEW report AS SELECT b.name_branch as namebranch, SUM(t.amount) as samount, t."%s" as evdesc FROM transaction t INNER JOIN account a ON a.id = t.from_account_id INNER JOIN branch b ON b.id = a.branch_id WHERE (date_transaction BETWEEN '%s' AND '%s') GROUP BY namebranch, evdesc ORDER BY namebranch'''%("desc",data['start_date'], data['end_date'].strip()))
 		result = db.engine.execute('''SELECT namebranch, SUM(Case When evdesc = 'Save' THEN samount ELSE 0 END),SUM(Case When evdesc = 'Withdraw'THEN samount ELSE 0 END)+SUM(Case When evdesc = 'Transfer'THEN samount ELSE 0 END) FROM report GROUP BY namebranch ''')
@@ -626,43 +717,92 @@ def branch_report_transaction():
 			x.append({'branch_name':y['namebranch'],'total_debit':y[1], 'total_credit':y[2]
 				})
 		return jsonify(x)
-	elif user.is_admin == False:
+	elif current_user.is_admin == False:
 		return {
 			'message':'Youre unauthorize to do that.'
 		},401
 
-#DB Execute branch report total user,account,balance
+#Get data branch report total amount transaction by date
+@app.route('/branch-report-transaction-get/', methods=['GET'])
+@token_required
+def branch_report_transaction_get(current_user):
+	# decode = request.headers.get('Authorization')
+	# allow = auth(decode)[0]
+	# user = User.query.filter_by(username=allow).first()
+	if not current_user:
+		return {
+				'message' : 'Check your login details.'
+			}, 401
+	if current_user.is_admin == True:
+		# data = request.get_json()
+		# create_view = db.engine.execute('''DROP VIEW IF EXISTS report; CREATE VIEW report AS SELECT b.name_branch as namebranch, SUM(t.amount) as samount, t."%s" as evdesc FROM transaction t INNER JOIN account a ON a.id = t.from_account_id INNER JOIN branch b ON b.id = a.branch_id WHERE (date_transaction BETWEEN '%s' AND '%s') GROUP BY namebranch, evdesc ORDER BY namebranch'''%("desc",data['start_date'], data['end_date'].strip()))
+		result = db.engine.execute('''SELECT namebranch, SUM(Case When evdesc = 'Save' THEN samount ELSE 0 END),SUM(Case When evdesc = 'Withdraw'THEN samount ELSE 0 END)+SUM(Case When evdesc = 'Transfer'THEN samount ELSE 0 END) FROM report GROUP BY namebranch ''')
+		x = []
+		for y in result:
+			x.append({'branch_name':y['namebranch'],'total_debit':y[1], 'total_credit':y[2]
+				})
+		return jsonify(x)
+	elif current_user.is_admin == False:
+		return {
+			'message':'Youre unauthorize to do that.'
+		},401
+
+#DB Execute per branch report total user,account,balance
 @app.route('/branch-report-total/', methods=['GET'])
-def branch_report_total():
-	decode = request.headers.get('Authorization')
-	allow = auth(decode)[0]
-	user = User.query.filter_by(username=allow).first()
-	if not user:
+@token_required
+def branch_report_total(current_user):
+	# decode = request.headers.get('Authorization')
+	# allow = auth(decode)[0]
+	# user = User.query.filter_by(username=allow).first()
+	if not current_user:
 		return {
 					'message' : 'Check your login details.'
 				}, 401
-	if user.is_admin == True:
+	if current_user.is_admin == True:
 		result = db.engine.execute('''SELECT b.name_branch as namebranch, COUNT(u.id) as uid,COUNT(a.id) as countacc,SUM(a.balance) as sumbalance FROM account a INNER JOIN branch b ON b.id = a.branch_id INNER JOIN "%s" u ON a.user_id=u.id GROUP BY b.name_branch ORDER BY namebranch'''%("user"))
 		x = []
 		for y in result:
 			x.append({'name_branch':y['namebranch'],'total_user':y['uid'], 'total_account':y['countacc'],'total_balance':y['sumbalance']})
 		return jsonify(x)
-	elif user.is_admin == False:
+	elif current_user.is_admin == False:
+		return {
+			'message':'Youre unauthorize to do that.'
+		},401
+
+#DB Execute all branch report total user,account,balance
+@app.route('/branch-all-report-total/', methods=['GET'])
+@token_required
+def branch_all_report_total(current_user):
+	# decode = request.headers.get('Authorization')
+	# allow = auth(decode)[0]
+	# user = User.query.filter_by(username=allow).first()
+	if not current_user:
+		return {
+					'message' : 'Check your login details.'
+				}, 401
+	if current_user.is_admin == True:
+		result = db.engine.execute('''SELECT COUNT(u.id) as uid,COUNT(a.id) as countacc,SUM(a.balance) as sumbalance FROM account a INNER JOIN branch b ON b.id = a.branch_id INNER JOIN "%s" u ON a.user_id=u.id'''%("user"))
+		x = []
+		for y in result:
+			x.append({'total_user':y['uid'], 'total_account':y['countacc'],'total_balance':y['sumbalance']})
+		return jsonify(x)
+	elif current_user.is_admin == False:
 		return {
 			'message':'Youre unauthorize to do that.'
 		},401
 
 #Dormant Report
 @app.route('/report-dormant/', methods=['GET'])
-def get_dormant_report():
-	decode = request.headers.get('Authorization')
-	allow = auth(decode)[0]
-	user = User.query.filter_by(username=allow).first()
-	if not user:
+@token_required
+def get_dormant_report(current_user):
+	# decode = request.headers.get('Authorization')
+	# allow = auth(decode)[0]
+	# user = User.query.filter_by(username=allow).first()
+	if not current_user:
 		return {
 				'message' : 'Check your login details.'
 			}, 401
-	if user.is_admin == True:
+	if current_user.is_admin == True:
 		test = get_time() #get class get_time yang berisi rumus pengurangan -90 hari
 		lsta = [] # untuk memasukkan semua account dari tabel account
 		lstb = [] # untuk memasukkan semua data from_account_id dari tabel transaction
@@ -695,7 +835,7 @@ def get_dormant_report():
 				time6 = time2
 			lstd.append({'account_number': t.id, "dormant_duration_by_days": (time6 * 30)+time5, "account_name":t.name_account})
 		return jsonify(lstd),201
-	elif user.is_admin == False:
+	elif current_user.is_admin == False:
 		return {
 			'message':'Youre unauthorize to do that.'
 		},401
@@ -709,4 +849,3 @@ def get_time():
 	lst.append(b.strftime('%Y-%m-%d'))
 	lst.append(a)
 	return lst
-
