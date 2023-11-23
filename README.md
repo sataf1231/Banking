@@ -1,4 +1,5 @@
-# Banking
+# Banking Python
+ORM SQL Alchemy
 - User Management
     - Register new User
     - Update user data
